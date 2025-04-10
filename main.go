@@ -11,9 +11,9 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"time"
 
 	jira "github.com/andygrunwald/go-jira"
+	"github.com/shiftstack/bugwatcher/pkg/jiraclient"
 	"github.com/shiftstack/bugwatcher/pkg/query"
 )
 
@@ -178,30 +178,6 @@ func createJiraIssue(jiraClient *jira.Client, issue GithubIssue) (*jira.Issue, e
 	return jiraIssue, nil
 }
 
-type throttlingHttpClient struct {
-	*http.Client
-}
-
-func (c *throttlingHttpClient) Do(req *http.Request) (*http.Response, error) {
-	res, err := c.Client.Do(req)
-	if err != nil {
-		return res, err
-	}
-
-	if res.StatusCode == http.StatusTooManyRequests {
-		wait := time.Second * 1
-		if retryAfter := res.Header.Get("retry-after"); retryAfter != "" {
-			if n, err := strconv.Atoi(retryAfter); err != nil {
-				wait = time.Duration(n) * time.Second
-			}
-		}
-		log.Printf("Throttled by Jira: waiting %s", wait)
-		time.Sleep(wait)
-		return c.Do(req)
-	}
-	return res, err
-}
-
 type knownIssue struct {
 	Key    string
 	Status *jira.Status
@@ -218,17 +194,9 @@ func main() {
 		}
 	}
 
-	var jiraClient *jira.Client
-	{
-		var err error
-		jiraClient, err = jira.NewClient(
-			&throttlingHttpClient{(&jira.BearerAuthTransport{Token: JIRA_TOKEN}).Client()},
-			jiraBaseURL,
-		)
-		if err != nil {
-			log.Fatalf("error building a Jira client: %v", err)
-		}
-
+	jiraClient, err := jiraclient.NewWithToken(query.JiraBaseURL, JIRA_TOKEN)
+	if err != nil {
+		log.Fatalf("error building a Jira client: %v", err)
 	}
 
 	issues, err := fetchGitHubIssues(GITHUB_TOKEN)
