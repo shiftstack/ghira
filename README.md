@@ -7,6 +7,7 @@ Will also move cards to `Closed` when the issue is closed on Github.
 Known issues:
 * metadata, and notably the assignee, is not updated
 * Github issues that have their assignee changed to a non-team-member will be ignored
+* Issues are created in status "New". To completely sync a closed Github issue, run ghira twice.
 
 Run locally:
 
