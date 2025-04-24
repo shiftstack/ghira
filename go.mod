@@ -1,6 +1,6 @@
 module github.com/shiftstack/ghira
 
-go 1.24.1
+go 1.23.6
 
 require (
 	github.com/andygrunwald/go-jira v1.16.0
