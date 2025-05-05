@@ -49,105 +49,98 @@ type GithubIssue struct {
 	IsPR   any    `json:"pull_request"`
 }
 
-// AssignedToTheTeam does three things (sorry). First of all, it filters out
-// PRs. Then it resolves Github handles to Jira usernames, and it filters out
-// issues that are not assigned to team members. This will have to be
-// refactored to account for issues that are synced as being assigned to the
-// team, and then are reassigned.
-func AssignedToTheTeam(issues []GithubIssue, team Team) []GithubIssue {
-	out := make([]GithubIssue, 0, len(issues))
-	for _, i := range issues {
+// AssignedToTheTeam does two things (sorry). It resolves Github handles to
+// Jira usernames, and it filters out issues that are not assigned to team
+// members. This will have to be refactored to account for issues that are
+// synced as being assigned to the team, and then are reassigned.
+func AssignedToTheTeam(issues <-chan GithubIssue, team Team) <-chan GithubIssue {
+	out := make(chan GithubIssue)
 
-		// Ignore PRs
-		if i.IsPR != nil {
-			continue
-		}
+	go func() {
+		defer close(out)
 
-		// Resolve the author's Jira username
-		if jiraUsername := team.JiraUsernameByGithubHandle(i.Author.Handle); jiraUsername != "" {
-			i.Author.JiraUsername = jiraUsername
-		}
+		for i := range issues {
+			// Resolve the author's Jira username
+			if jiraUsername := team.JiraUsernameByGithubHandle(i.Author.Handle); jiraUsername != "" {
+				i.Author.JiraUsername = jiraUsername
+			}
 
-		// Resolve the assignee's Jira username; append to the results if found.
-		if jiraUsername := team.JiraUsernameByGithubHandle(i.Assignee.Handle); jiraUsername != "" {
-			i.Assignee.JiraUsername = jiraUsername
-			out = append(out, i)
+			// Resolve the assignee's Jira username; append to the results if found.
+			if jiraUsername := team.JiraUsernameByGithubHandle(i.Assignee.Handle); jiraUsername != "" {
+				i.Assignee.JiraUsername = jiraUsername
+				out <- i
+			}
 		}
-	}
+	}()
 	return out
 }
 
-func fetchGitHubIssues(token string) ([]GithubIssue, error) {
-	// url := "https://api.github.com/search/issues"
-	// req, err := http.NewRequest("GET", url, nil)
-	// if err != nil {
-	// 	return nil, err
-	// }
-	// if token != "" {
-	// 	req.Header.Set("Authorization", "Bearer "+token)
-	// 	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
-	// 	req.Header.Set("Accept", "application/vnd.github.text+json") // Don't need the Markdown version
-	// }
-	// {
-	// 	q := req.URL.Query()
-	// 	q.Add("q", fmt.Sprintf("repo:%s is:issue state:all", githubRepository))
-	// 	req.URL.RawQuery = q.Encode()
-	// }
+func fetchGitHubIssues(ctx context.Context, token string) <-chan GithubIssue {
+	issueCh := make(chan GithubIssue)
 
-	var issues []GithubIssue
+	go func() {
+		defer close(issueCh)
 
-	// https://docs.github.com/en/rest/issues/issues?apiVersion=2022-11-28#list-repository-issues
-	client := &http.Client{}
-	url := fmt.Sprintf("https://api.github.com/repos/%s/issues", githubRepository)
-	for url != "" {
-		req, err := http.NewRequest("GET", url, nil)
-		if err != nil {
-			return nil, err
-		}
-		if token != "" {
-			req.Header.Set("Authorization", "Bearer "+token)
-			req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
-			req.Header.Set("Accept", "application/vnd.github.text+json") // Don't need the Markdown version
-		}
-		{
-			q := req.URL.Query()
-			q.Add("state", "all")
-			req.URL.RawQuery = q.Encode()
-		}
-
-		res, err := client.Do(req)
-		if err != nil {
-			return nil, err
-		}
-		defer func() {
-			io.Copy(io.Discard, res.Body)
-			res.Body.Close()
-		}()
-
-		if statusCode := res.StatusCode; statusCode != 200 {
-			body, err := io.ReadAll(res.Body)
+		// https://docs.github.com/en/rest/issues/issues?apiVersion=2022-11-28#list-repository-issues
+		client := &http.Client{}
+		url := fmt.Sprintf("https://api.github.com/repos/%s/issues", githubRepository)
+		for url != "" {
+			req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 			if err != nil {
-				return nil, fmt.Errorf("Status code %d from Github. Additionally, reading the body errored with: %v", statusCode, err)
+				log.Fatalf("error fetching issues: %v", err)
+				return
 			}
-			return nil, fmt.Errorf("Status code %d from Github: %s", statusCode, body)
-		}
-		var issueBatch []GithubIssue
-		err = json.NewDecoder(res.Body).Decode(&issueBatch)
-		if err != nil {
-			return nil, err
-		}
-		issues = append(issues, issueBatch...)
+			if token != "" {
+				req.Header.Set("Authorization", "Bearer "+token)
+				req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
+				req.Header.Set("Accept", "application/vnd.github.text+json") // Don't need the Markdown version
+			}
+			{
+				q := req.URL.Query()
+				q.Add("state", "all")
+				req.URL.RawQuery = q.Encode()
+			}
 
-		url = ""
-		if linkHeader := res.Header.Get("link"); linkHeader != "" {
-			if s := linkHeaderRegex.FindStringSubmatch(linkHeader); len(s) > 1 {
-				url = s[1]
+			res, err := client.Do(req)
+			if err != nil {
+				log.Fatalf("error fetching issues: %v", err)
+				return
+			}
+			defer func() {
+				io.Copy(io.Discard, res.Body)
+				res.Body.Close()
+			}()
+
+			if statusCode := res.StatusCode; statusCode != 200 {
+				body, err := io.ReadAll(res.Body)
+				if err != nil {
+					log.Fatalf("Status code %d from Github. Additionally, reading the body errored with: %v", statusCode, err)
+					return
+				}
+				log.Fatalf("Status code %d from Github: %s", statusCode, body)
+				return
+			}
+			var issueBatch []GithubIssue
+			err = json.NewDecoder(res.Body).Decode(&issueBatch)
+			if err != nil {
+				log.Fatalf("error decoding Github issues: %v", err)
+				return
+			}
+			for _, issue := range issueBatch {
+				if issue.IsPR == nil {
+					issueCh <- issue
+				}
+			}
+
+			url = ""
+			if linkHeader := res.Header.Get("link"); linkHeader != "" {
+				if s := linkHeaderRegex.FindStringSubmatch(linkHeader); len(s) > 1 {
+					url = s[1]
+				}
 			}
 		}
-	}
-
-	log.Printf("Found: %d issues on Github", len(issues))
-	return issues, nil
+	}()
+	return issueCh
 }
 
 func createJiraIssue(jiraClient *jira.Client, issue GithubIssue) (*jira.Issue, error) {
@@ -184,6 +177,7 @@ type knownIssue struct {
 }
 
 func main() {
+	ctx := context.Background()
 	var team Team
 	{
 		var err error
@@ -199,14 +193,10 @@ func main() {
 		log.Fatalf("error building a Jira client: %v", err)
 	}
 
-	issues, err := fetchGitHubIssues(GITHUB_TOKEN)
-	if err != nil {
-		fmt.Println("Error fetching GitHub issues:", err)
-		return
-	}
+	issues := fetchGitHubIssues(ctx, GITHUB_TOKEN)
 
 	alreadyKnown := make(map[int]knownIssue)
-	for issue := range query.SearchIssues(context.Background(), jiraClient, shiftStackQuery) {
+	for issue := range query.SearchIssues(ctx, jiraClient, shiftStackQuery) {
 		if s := ghIssueNumberRegex.FindStringSubmatch(issue.Fields.Summary); len(s) > 1 {
 			n, err := strconv.Atoi(s[1])
 			if err != nil {
@@ -227,7 +217,7 @@ func main() {
 		log.Printf("Known issues: %v", alreadyKnownNumbers)
 	}
 
-	for _, issue := range AssignedToTheTeam(issues, team) {
+	for issue := range AssignedToTheTeam(issues, team) {
 		log.Printf("Now processing Github issue number %d, assigned to %s, status %q", issue.Number, issue.Author.Handle, issue.Status)
 
 		if jiraIssue, ok := alreadyKnown[issue.Number]; ok {
