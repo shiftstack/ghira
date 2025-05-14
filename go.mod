@@ -4,7 +4,7 @@ go 1.23.6
 
 require (
 	github.com/andygrunwald/go-jira v1.16.0
-	github.com/shiftstack/bugwatcher v0.0.0-20250410130936-2155fc061b43
+	github.com/shiftstack/bugwatcher v0.0.0-20250514164404-c78d0fad9aeb
 )
 
 require (
@@ -13,4 +13,5 @@ require (
 	github.com/google/go-querystring v1.1.0 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/trivago/tgo v1.0.7 // indirect
+	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
