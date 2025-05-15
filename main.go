@@ -15,6 +15,7 @@ import (
 	jira "github.com/andygrunwald/go-jira"
 	"github.com/shiftstack/bugwatcher/pkg/jiraclient"
 	"github.com/shiftstack/bugwatcher/pkg/query"
+	"github.com/shiftstack/bugwatcher/pkg/team"
 )
 
 const (
@@ -26,7 +27,8 @@ const (
 var (
 	GITHUB_TOKEN = os.Getenv("GITHUB_TOKEN")
 	JIRA_TOKEN   = os.Getenv("JIRA_TOKEN")
-	TEAM_DICT    = os.Getenv("TEAM_DICT")
+	PEOPLE       = os.Getenv("PEOPLE")
+	TEAM         = os.Getenv("TEAM")
 
 	ghIssueNumberRegex = regexp.MustCompile(`GH-orc-(\d+): `)
 	linkHeaderRegex    = regexp.MustCompile(`<(\S+)>; rel="next"`)
@@ -53,7 +55,7 @@ type GithubIssue struct {
 // Jira usernames, and it filters out issues that are not assigned to team
 // members. This will have to be refactored to account for issues that are
 // synced as being assigned to the team, and then are reassigned.
-func AssignedToTheTeam(issues <-chan GithubIssue, team Team) <-chan GithubIssue {
+func AssignedToTheTeam(issues <-chan GithubIssue, teamMembers []team.Person) <-chan GithubIssue {
 	out := make(chan GithubIssue)
 
 	go func() {
@@ -61,13 +63,13 @@ func AssignedToTheTeam(issues <-chan GithubIssue, team Team) <-chan GithubIssue 
 
 		for i := range issues {
 			// Resolve the author's Jira username
-			if jiraUsername := team.JiraUsernameByGithubHandle(i.Author.Handle); jiraUsername != "" {
-				i.Author.JiraUsername = jiraUsername
+			if author, ok := team.PersonByGithubHandle(teamMembers, i.Author.Handle); ok {
+				i.Author.JiraUsername = author.Jira
 			}
 
 			// Resolve the assignee's Jira username; append to the results if found.
-			if jiraUsername := team.JiraUsernameByGithubHandle(i.Assignee.Handle); jiraUsername != "" {
-				i.Assignee.JiraUsername = jiraUsername
+			if assignee, ok := team.PersonByGithubHandle(teamMembers, i.Assignee.Handle); ok {
+				i.Assignee.JiraUsername = assignee.Jira
 				out <- i
 			}
 		}
@@ -178,13 +180,17 @@ type knownIssue struct {
 
 func main() {
 	ctx := context.Background()
-	var team Team
+	var teamMembers []team.Person
 	{
-		var err error
-		team, err = LoadTeam(strings.NewReader(TEAM_DICT))
+		people, err := team.Load(strings.NewReader(PEOPLE), strings.NewReader(TEAM))
 		if err != nil {
-			log.Printf("Failed to load the list of team members: %v", err)
-			os.Exit(1)
+			log.Fatalf("error fetching team information: %v", err)
+		}
+		teamMembers = make([]team.Person, 0, len(people))
+		for i := range people {
+			if people[i].TeamMember {
+				teamMembers = append(teamMembers, people[i])
+			}
 		}
 	}
 
@@ -217,7 +223,7 @@ func main() {
 		log.Printf("Known issues: %v", alreadyKnownNumbers)
 	}
 
-	for issue := range AssignedToTheTeam(issues, team) {
+	for issue := range AssignedToTheTeam(issues, teamMembers) {
 		log.Printf("Now processing Github issue number %d, assigned to %s, status %q", issue.Number, issue.Author.Handle, issue.Status)
 
 		if jiraIssue, ok := alreadyKnown[issue.Number]; ok {
@@ -275,9 +281,14 @@ func init() {
 		log.Print("Required environment variable not found: JIRA_TOKEN")
 	}
 
-	if TEAM_DICT == "" {
+	if PEOPLE == "" {
 		ex_usage = true
-		log.Print("Required environment variable not found: TEAM_MEMBERS_DICT")
+		log.Print("Required environment variable not found: PEOPLE")
+	}
+
+	if TEAM == "" {
+		ex_usage = true
+		log.Print("Required environment variable not found: TEAM")
 	}
 
 	if ex_usage {

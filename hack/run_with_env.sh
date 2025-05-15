@@ -53,8 +53,9 @@ check_or_fetch() {
 	export "${var_name?}"
 }
 
-check_or_fetch JIRA_TOKEN bugwatcher jira-token
-check_or_fetch GITHUB_TOKEN ghira github-token
-check_or_fetch TEAM_DICT team teamdict.json
+check_or_fetch JIRA_TOKEN   bugwatcher jira-token
+check_or_fetch GITHUB_TOKEN ghira      github-token
+check_or_fetch PEOPLE       team       people.yaml
+check_or_fetch TEAM         team       team.yaml
 
 exec "$@"

@@ -13,11 +13,15 @@ github.com/google/go-querystring/query
 # github.com/pkg/errors v0.9.1
 ## explicit
 github.com/pkg/errors
-# github.com/shiftstack/bugwatcher v0.0.0-20250410130936-2155fc061b43
+# github.com/shiftstack/bugwatcher v0.0.0-20250514164404-c78d0fad9aeb
 ## explicit; go 1.23.6
 github.com/shiftstack/bugwatcher/pkg/jiraclient
 github.com/shiftstack/bugwatcher/pkg/query
+github.com/shiftstack/bugwatcher/pkg/team
 # github.com/trivago/tgo v1.0.7
 ## explicit
 github.com/trivago/tgo/tcontainer
 github.com/trivago/tgo/treflect
+# gopkg.in/yaml.v3 v3.0.1
+## explicit
+gopkg.in/yaml.v3

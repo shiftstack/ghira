@@ -10,7 +10,8 @@ const ShiftStack = `project = "OpenShift Bugs"
 			"Cloud Compute / OpenStack Provider",
 			"Machine Config Operator / platform-openstack",
 			"Networking / kuryr",
-			"Test Framework / OpenStack"
+			"Test Framework / OpenStack",
+			"HyperShift / OpenStack"
 		)
 	)
 `
