@@ -51,27 +51,27 @@ type GithubIssue struct {
 	IsPR   any    `json:"pull_request"`
 }
 
-// AssignedToTheTeam does two things (sorry). It resolves Github handles to
-// Jira usernames, and it filters out issues that are not assigned to team
-// members. This will have to be refactored to account for issues that are
-// synced as being assigned to the team, and then are reassigned.
-func AssignedToTheTeam(issues <-chan GithubIssue, teamMembers []team.Person) <-chan GithubIssue {
+// ResolveNames resolves Github handles to Jira usernames.
+func ResolveNames(issues <-chan GithubIssue, teamMembers []team.Person) <-chan GithubIssue {
 	out := make(chan GithubIssue)
 
 	go func() {
 		defer close(out)
 
 		for i := range issues {
-			// Resolve the author's Jira username
-			if author, ok := team.PersonByGithubHandle(teamMembers, i.Author.Handle); ok {
-				i.Author.JiraUsername = author.Jira
+			if i.Author.Handle != "" {
+				if author, ok := team.PersonByGithubHandle(teamMembers, i.Author.Handle); ok {
+					i.Author.JiraUsername = author.Jira
+				}
 			}
 
-			// Resolve the assignee's Jira username; append to the results if found.
-			if assignee, ok := team.PersonByGithubHandle(teamMembers, i.Assignee.Handle); ok {
-				i.Assignee.JiraUsername = assignee.Jira
-				out <- i
+			if i.Assignee.Handle != "" {
+				if assignee, ok := team.PersonByGithubHandle(teamMembers, i.Assignee.Handle); ok {
+					i.Assignee.JiraUsername = assignee.Jira
+				}
 			}
+
+			out <- i
 		}
 	}()
 	return out
@@ -148,9 +148,6 @@ func fetchGitHubIssues(ctx context.Context, token string) <-chan GithubIssue {
 func createJiraIssue(jiraClient *jira.Client, issue GithubIssue) (*jira.Issue, error) {
 	i := jira.Issue{
 		Fields: &jira.IssueFields{
-			Assignee: &jira.User{
-				Name: issue.Assignee.JiraUsername,
-			},
 			Description: fmt.Sprintf("Originally posted on Github: %s\n\n%s", issue.URL, issue.Body),
 			Type: jira.IssueType{
 				Name: "Task",
@@ -161,6 +158,18 @@ func createJiraIssue(jiraClient *jira.Client, issue GithubIssue) (*jira.Issue, e
 			Summary:    "GH-orc-" + strconv.Itoa(issue.Number) + ": " + issue.Title,
 			Components: []*jira.Component{{Name: "ORC"}},
 		},
+	}
+
+	if assignee := issue.Assignee.JiraUsername; assignee != "" {
+		i.Fields.Assignee = &jira.User{
+			Name: assignee,
+		}
+	}
+
+	if author := issue.Author.JiraUsername; author != "" {
+		i.Fields.Reporter = &jira.User{
+			Name: author,
+		}
 	}
 
 	jiraIssue, response, err := jiraClient.Issue.Create(&i)
@@ -223,10 +232,11 @@ func main() {
 		log.Printf("Known issues: %v", alreadyKnownNumbers)
 	}
 
-	for issue := range AssignedToTheTeam(issues, teamMembers) {
-		log.Printf("Now processing Github issue number %d, assigned to %s, status %q", issue.Number, issue.Author.Handle, issue.Status)
+	for issue := range ResolveNames(issues, teamMembers) {
+		jiraIssue, issueExistsInJira := alreadyKnown[issue.Number]
+		log.Printf("Now processing Github issue number %d, assigned to %s, status %q (Jira: %q)", issue.Number, issue.Author.Handle, issue.Status, jiraIssue.Key)
 
-		if jiraIssue, ok := alreadyKnown[issue.Number]; ok {
+		if issueExistsInJira {
 			var transitionTodo, transitionClosed string
 			{
 				possibleTransitions, _, _ := jiraClient.Issue.GetTransitions(jiraIssue.Key)
@@ -257,7 +267,7 @@ func main() {
 		} else {
 			jiraIssue, err := createJiraIssue(jiraClient, issue)
 			if err != nil {
-				fmt.Println("Error creating Jira story:", err)
+				fmt.Println("Error creating Jira issue:", err)
 			}
 
 			if jiraIssue != nil {
