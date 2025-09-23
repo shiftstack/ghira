@@ -3,7 +3,7 @@ module github.com/shiftstack/ghira
 go 1.23.6
 
 require (
-	github.com/andygrunwald/go-jira v1.16.0
+	github.com/andygrunwald/go-jira v1.17.0
 	github.com/shiftstack/bugwatcher v0.0.0-20250514164404-c78d0fad9aeb
 )
 
