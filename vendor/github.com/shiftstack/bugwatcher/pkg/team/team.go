@@ -23,9 +23,8 @@ type Person struct {
 	Jira     string `yaml:"jira_name"`
 	Slack    string `yaml:"slack_id"`
 
-	TeamMember bool
-	BugTriage  bool
-	leave      []Leave
+	BugTriage bool    `yaml:"bug_triage,omitempty"`
+	leave     []Leave `yaml:"leave,omitempty"`
 }
 
 func (p Person) IsAvailable(t time.Time) bool {
@@ -37,46 +36,26 @@ func (p Person) IsAvailable(t time.Time) bool {
 	return true
 }
 
-func Load(peopleYAML, teamYAML io.Reader) ([]Person, error) {
+func Load(peopleYAML io.Reader) ([]Person, error) {
 	var people []Person
 	if err := yaml.NewDecoder(peopleYAML).Decode(&people); err != nil {
 		return nil, fmt.Errorf("error decoding people: %w", err)
 	}
 
-	var team map[string]struct {
-		BugTriage bool `yaml:"bug_triage"`
-		Leave     []struct {
-			Start time.Time `yaml:"start"`
-			End   time.Time `yaml:"end"`
-		} `yaml:"leave"`
-	}
-
-	if err := yaml.NewDecoder(teamYAML).Decode(&team); err != nil {
-		return nil, fmt.Errorf("error decoding team: %w", err)
-	}
-
 	for i := range people {
 		// user handles need a prepended `@` when mentioned in the chat
 		people[i].Slack = "@" + people[i].Slack
-
-		if teamMember, ok := team[people[i].Kerberos]; ok {
-			people[i].TeamMember = true
-			people[i].BugTriage = teamMember.BugTriage
-			if len(teamMember.Leave) > 0 {
-				people[i].leave = make([]Leave, len(teamMember.Leave))
-				for j := range teamMember.Leave {
-					people[i].leave[j].Start = teamMember.Leave[j].Start
-					people[i].leave[j].End = teamMember.Leave[j].End
-				}
-			}
-		}
 	}
+
 	return people, nil
 }
 
 // PersonByJiraName returns the first person in the slice with the given Jira
 // name. The returned boolean is false if not found.
 func PersonByJiraName(people []Person, jiraName string) (Person, bool) {
+	if jiraName == "" {
+		return Person{}, false
+	}
 	for i := range people {
 		if people[i].Jira == jiraName {
 			return people[i], true
@@ -88,6 +67,9 @@ func PersonByJiraName(people []Person, jiraName string) (Person, bool) {
 // PersonByGithubHandle returns the first person in the slice with the given
 // Github handle. The returned boolean is false if not found.
 func PersonByGithubHandle(people []Person, githubHandle string) (Person, bool) {
+	if githubHandle == "" {
+		return Person{}, false
+	}
 	for i := range people {
 		if people[i].Github == githubHandle {
 			return people[i], true

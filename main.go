@@ -19,7 +19,6 @@ import (
 )
 
 const (
-	jiraBaseURL      = "https://issues.redhat.com/"
 	githubRepository = "k-orc/openstack-resource-controller"
 	shiftStackQuery  = `project = "OSASINFRA" AND (component in ("ORC"))`
 )
@@ -28,7 +27,6 @@ var (
 	GITHUB_TOKEN = os.Getenv("GITHUB_TOKEN")
 	JIRA_TOKEN   = os.Getenv("JIRA_TOKEN")
 	PEOPLE       = os.Getenv("PEOPLE")
-	TEAM         = os.Getenv("TEAM")
 
 	ghIssueNumberRegex = regexp.MustCompile(`GH-orc-(\d+): `)
 	linkHeaderRegex    = regexp.MustCompile(`<(\S+)>; rel="next"`)
@@ -189,18 +187,10 @@ type knownIssue struct {
 
 func main() {
 	ctx := context.Background()
-	var teamMembers []team.Person
-	{
-		people, err := team.Load(strings.NewReader(PEOPLE), strings.NewReader(TEAM))
-		if err != nil {
-			log.Fatalf("error fetching team information: %v", err)
-		}
-		teamMembers = make([]team.Person, 0, len(people))
-		for i := range people {
-			if people[i].TeamMember {
-				teamMembers = append(teamMembers, people[i])
-			}
-		}
+
+	people, err := team.Load(strings.NewReader(PEOPLE))
+	if err != nil {
+		log.Fatalf("error fetching team information: %v", err)
 	}
 
 	jiraClient, err := jiraclient.NewWithToken(query.JiraBaseURL, JIRA_TOKEN)
@@ -232,7 +222,7 @@ func main() {
 		log.Printf("Known issues: %v", alreadyKnownNumbers)
 	}
 
-	for issue := range ResolveNames(issues, teamMembers) {
+	for issue := range ResolveNames(issues, people) {
 		jiraIssue, issueExistsInJira := alreadyKnown[issue.Number]
 		log.Printf("Now processing Github issue number %d, assigned to %s, status %q (Jira: %q)", issue.Number, issue.Author.Handle, issue.Status, jiraIssue.Key)
 
@@ -294,11 +284,6 @@ func init() {
 	if PEOPLE == "" {
 		ex_usage = true
 		log.Print("Required environment variable not found: PEOPLE")
-	}
-
-	if TEAM == "" {
-		ex_usage = true
-		log.Print("Required environment variable not found: TEAM")
 	}
 
 	if ex_usage {
