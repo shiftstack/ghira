@@ -13,8 +13,8 @@ github.com/google/go-querystring/query
 # github.com/pkg/errors v0.9.1
 ## explicit
 github.com/pkg/errors
-# github.com/shiftstack/bugwatcher v0.0.0-20250514164404-c78d0fad9aeb
-## explicit; go 1.23.6
+# github.com/shiftstack/bugwatcher v0.0.0-20251205071009-9727de6198f9
+## explicit; go 1.24.4
 github.com/shiftstack/bugwatcher/pkg/jiraclient
 github.com/shiftstack/bugwatcher/pkg/query
 github.com/shiftstack/bugwatcher/pkg/team

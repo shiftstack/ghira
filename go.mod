@@ -1,10 +1,10 @@
 module github.com/shiftstack/ghira
 
-go 1.24.0
+go 1.24.4
 
 require (
 	github.com/andygrunwald/go-jira v1.17.0
-	github.com/shiftstack/bugwatcher v0.0.0-20250514164404-c78d0fad9aeb
+	github.com/shiftstack/bugwatcher v0.0.0-20251205071009-9727de6198f9
 )
 
 require (
