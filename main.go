@@ -25,6 +25,7 @@ const (
 
 var (
 	GITHUB_TOKEN = os.Getenv("GITHUB_TOKEN")
+	JIRA_EMAIL   = os.Getenv("JIRA_EMAIL")
 	JIRA_TOKEN   = os.Getenv("JIRA_TOKEN")
 	PEOPLE       = os.Getenv("PEOPLE")
 
@@ -38,18 +39,18 @@ type GithubIssue struct {
 	URL    string `json:"html_url"`
 	Number int    `json:"number"`
 	Author struct {
-		Handle       string `json:"login"`
-		JiraUsername string `json:"-"`
+		Handle        string `json:"login"`
+		JiraAccountID string `json:"-"`
 	} `json:"user"`
 	Assignee struct {
-		Handle       string `json:"login"`
-		JiraUsername string `json:"-"`
+		Handle        string `json:"login"`
+		JiraAccountID string `json:"-"`
 	} `json:"assignee"`
 	Status string `json:"state"`
 	IsPR   any    `json:"pull_request"`
 }
 
-// ResolveNames resolves Github handles to Jira usernames.
+// ResolveNames resolves Github handles to Jira account IDs.
 func ResolveNames(issues <-chan GithubIssue, teamMembers []team.Person) <-chan GithubIssue {
 	out := make(chan GithubIssue)
 
@@ -59,13 +60,13 @@ func ResolveNames(issues <-chan GithubIssue, teamMembers []team.Person) <-chan G
 		for i := range issues {
 			if i.Author.Handle != "" {
 				if author, ok := team.PersonByGithubHandle(teamMembers, i.Author.Handle); ok {
-					i.Author.JiraUsername = author.Jira
+					i.Author.JiraAccountID = author.JiraAccountID
 				}
 			}
 
 			if i.Assignee.Handle != "" {
 				if assignee, ok := team.PersonByGithubHandle(teamMembers, i.Assignee.Handle); ok {
-					i.Assignee.JiraUsername = assignee.Jira
+					i.Assignee.JiraAccountID = assignee.JiraAccountID
 				}
 			}
 
@@ -158,15 +159,15 @@ func createJiraIssue(jiraClient *jira.Client, issue GithubIssue) (*jira.Issue, e
 		},
 	}
 
-	if assignee := issue.Assignee.JiraUsername; assignee != "" {
+	if assignee := issue.Assignee.JiraAccountID; assignee != "" {
 		i.Fields.Assignee = &jira.User{
-			Name: assignee,
+			AccountID: assignee,
 		}
 	}
 
-	if author := issue.Author.JiraUsername; author != "" {
+	if author := issue.Author.JiraAccountID; author != "" {
 		i.Fields.Reporter = &jira.User{
-			Name: author,
+			AccountID: author,
 		}
 	}
 
@@ -193,7 +194,7 @@ func main() {
 		log.Fatalf("error fetching team information: %v", err)
 	}
 
-	jiraClient, err := jiraclient.NewWithToken(query.JiraBaseURL, JIRA_TOKEN)
+	jiraClient, err := jiraclient.NewWithToken(query.JiraBaseURL, JIRA_EMAIL, JIRA_TOKEN)
 	if err != nil {
 		log.Fatalf("error building a Jira client: %v", err)
 	}
@@ -229,8 +230,14 @@ func main() {
 		if issueExistsInJira {
 			var transitionTodo, transitionClosed string
 			{
-				possibleTransitions, _, _ := jiraClient.Issue.GetTransitions(jiraIssue.Key)
+				possibleTransitions, _, err := jiraClient.Issue.GetTransitions(jiraIssue.Key)
+				if err != nil {
+					log.Printf("ERROR: Unable to get transitions for issue %s: %v", jiraIssue.Key, err)
+				}
+
+				var transitionNames []string
 				for _, v := range possibleTransitions {
+					transitionNames = append(transitionNames, v.Name)
 					switch v.Name {
 					case "Closed":
 						transitionClosed = v.ID
@@ -242,13 +249,17 @@ func main() {
 
 			switch {
 			case issue.Status == "closed" && jiraIssue.Status.Name != "Closed":
-				if _, err := jiraClient.Issue.DoTransition(jiraIssue.Key, transitionClosed); err != nil {
+				if transitionClosed == "" {
+					log.Printf("WARNING: No \"Closed\" transition available for %s -- skipping", jiraIssue.Key)
+				} else if _, err := jiraClient.Issue.DoTransition(jiraIssue.Key, transitionClosed); err != nil {
 					log.Printf("ERROR: Unable to transition issue %s to Closed: %v", jiraIssue.Key, err)
 				} else {
 					log.Printf("Transitioned issue %s to Closed", jiraIssue.Key)
 				}
 			case issue.Status == "open" && jiraIssue.Status.Name == "Closed":
-				if _, err := jiraClient.Issue.DoTransition(jiraIssue.Key, transitionTodo); err != nil {
+				if transitionTodo == "" {
+					log.Printf("WARNING: No \"To Do\" transition available for %s -- skipping", jiraIssue.Key)
+				} else if _, err := jiraClient.Issue.DoTransition(jiraIssue.Key, transitionTodo); err != nil {
 					log.Printf("ERROR: Unable to transition issue %s to To Do: %v", jiraIssue.Key, err)
 				} else {
 					log.Printf("Transitioned issue %s to To Do", jiraIssue.Key)
@@ -274,6 +285,11 @@ func init() {
 	if GITHUB_TOKEN == "" {
 		ex_usage = true
 		log.Print("Required environment variable not found: GITHUB_TOKEN")
+	}
+
+	if JIRA_EMAIL == "" {
+		ex_usage = true
+		log.Print("Required environment variable not found: JIRA_EMAIL")
 	}
 
 	if JIRA_TOKEN == "" {

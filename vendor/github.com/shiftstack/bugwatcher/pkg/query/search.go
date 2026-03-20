@@ -12,10 +12,9 @@ func SearchIssues(ctx context.Context, client *jira.Client, searchString string)
 	issueCh := make(chan jira.Issue)
 
 	go func() {
-		opt := &jira.SearchOptions{MaxResults: 100}
-		for last, total := 0, 1; last < total; {
-			opt.StartAt = last
-			issues, res, err := client.Issue.SearchWithContext(ctx, searchString, opt)
+		opt := &jira.SearchOptionsV2{MaxResults: 100, Fields: []string{"*all"}}
+		for {
+			issues, res, err := client.Issue.SearchV2JQLWithContext(ctx, searchString, opt)
 			if err != nil {
 				log.Fatalf("error fetching issues: %v", err)
 				return
@@ -33,7 +32,10 @@ func SearchIssues(ctx context.Context, client *jira.Client, searchString string)
 				issueCh <- issue
 			}
 
-			last, total = res.StartAt+len(issues), res.Total
+			if res.IsLast || res.NextPageToken == "" {
+				break
+			}
+			opt.NextPageToken = res.NextPageToken
 		}
 		close(issueCh)
 	}()

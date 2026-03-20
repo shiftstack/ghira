@@ -18,10 +18,11 @@ type Leave struct {
 }
 
 type Person struct {
-	Kerberos string `yaml:"kerberos"`
-	Github   string `yaml:"github_handle"`
-	Jira     string `yaml:"jira_name"`
-	Slack    string `yaml:"slack_id"`
+	Kerberos      string `yaml:"kerberos"`
+	Github        string `yaml:"github_handle"`
+	Jira          string `yaml:"jira_name"`
+	JiraAccountID string `yaml:"jira_account_id"`
+	Slack         string `yaml:"slack_id"`
 
 	BugTriage bool    `yaml:"bug_triage,omitempty"`
 	leave     []Leave `yaml:"leave,omitempty"`
@@ -58,6 +59,20 @@ func PersonByJiraName(people []Person, jiraName string) (Person, bool) {
 	}
 	for i := range people {
 		if people[i].Jira == jiraName {
+			return people[i], true
+		}
+	}
+	return Person{}, false
+}
+
+// PersonByJiraAccountID returns the first person in the slice with the given
+// Jira account ID. The returned boolean is false if not found.
+func PersonByJiraAccountID(people []Person, accountID string) (Person, bool) {
+	if accountID == "" {
+		return Person{}, false
+	}
+	for i := range people {
+		if people[i].JiraAccountID == accountID {
 			return people[i], true
 		}
 	}

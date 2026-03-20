@@ -1,6 +1,6 @@
 package query
 
-const JiraBaseURL = "https://issues.redhat.com/"
+const JiraBaseURL = "https://redhat.atlassian.net/"
 
 const ShiftStack = `project = "OpenShift Bugs"
 	AND (
@@ -13,5 +13,5 @@ const ShiftStack = `project = "OpenShift Bugs"
 			"Test Framework / OpenStack",
 			"HyperShift / OpenStack"
 		)
-	)
+	) AND labels != "bugwatcher-ignore"
 `
