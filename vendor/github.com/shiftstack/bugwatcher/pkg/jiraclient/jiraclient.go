@@ -32,9 +32,9 @@ func (c *throttlingHttpClient) Do(req *http.Request) (*http.Response, error) {
 }
 
 // NewWithToken returns a Jira client that retries when hitting 429
-func NewWithToken(baseURL, jiraToken string) (jiraClient *jira.Client, err error) {
+func NewWithToken(baseURL, jiraEmail, jiraToken string) (jiraClient *jira.Client, err error) {
 	return jira.NewClient(
-		&throttlingHttpClient{(&jira.BearerAuthTransport{Token: jiraToken}).Client()},
+		&throttlingHttpClient{(&jira.BasicAuthTransport{Username: jiraEmail, Password: jiraToken}).Client()},
 		baseURL,
 	)
 }

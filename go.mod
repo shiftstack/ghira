@@ -4,7 +4,7 @@ go 1.24.4
 
 require (
 	github.com/andygrunwald/go-jira v1.17.0
-	github.com/shiftstack/bugwatcher v0.0.0-20251205071009-9727de6198f9
+	github.com/shiftstack/bugwatcher v0.0.0-20260320065400-fd0380bc1684
 )
 
 require (
