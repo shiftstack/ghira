@@ -50,6 +50,70 @@ type GithubIssue struct {
 	IsPR   any    `json:"pull_request"`
 }
 
+func checkForLinkedPR(ctx context.Context, token string, issueNumber int) bool {
+	client := &http.Client{}
+	url := fmt.Sprintf("https://api.github.com/repos/%s/issues/%d/timeline", githubRepository, issueNumber)
+
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		log.Printf("WARNING: error creating timeline request for issue %d: %v", issueNumber, err)
+		return false
+	}
+
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+		req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
+		req.Header.Set("Accept", "application/vnd.github.mockingbird-preview+json")
+	}
+
+	res, err := client.Do(req)
+	if err != nil {
+		log.Printf("WARNING: error fetching timeline for issue %d: %v", issueNumber, err)
+		return false
+	}
+	defer func() {
+		io.Copy(io.Discard, res.Body)
+		res.Body.Close()
+	}()
+
+	if res.StatusCode != 200 {
+		log.Printf("WARNING: GitHub timeline API returned status %d for issue %d", res.StatusCode, issueNumber)
+		return false
+	}
+
+	var events []map[string]any
+	if err := json.NewDecoder(res.Body).Decode(&events); err != nil {
+		log.Printf("WARNING: error decoding timeline events for issue %d: %v", issueNumber, err)
+		return false
+	}
+
+	for _, event := range events {
+		eventType, ok := event["event"].(string)
+		if !ok {
+			continue
+		}
+		if eventType != "cross-referenced" && eventType != "connected" {
+			continue
+		}
+
+		source, ok := event["source"].(map[string]any)
+		if !ok {
+			continue
+		}
+
+		issue, ok := source["issue"].(map[string]any)
+		if !ok {
+			continue
+		}
+
+		if prField, exists := issue["pull_request"]; exists && prField != nil {
+			return true
+		}
+	}
+
+	return false
+}
+
 // ResolveNames resolves Github handles to Jira account IDs.
 func ResolveNames(issues <-chan GithubIssue, teamMembers []team.Person) <-chan GithubIssue {
 	out := make(chan GithubIssue)
@@ -257,7 +321,9 @@ func main() {
 					log.Printf("Transitioned issue %s to Closed", jiraIssue.Key)
 				}
 			case issue.Status == "open" && jiraIssue.Status.Name == "Closed":
-				if transitionTodo == "" {
+				if checkForLinkedPR(ctx, GITHUB_TOKEN, issue.Number) {
+					log.Printf("Issue %d has a linked PR, skipping reopen of Jira ticket %s", issue.Number, jiraIssue.Key)
+				} else if transitionTodo == "" {
 					log.Printf("WARNING: No \"To Do\" transition available for %s -- skipping", jiraIssue.Key)
 				} else if _, err := jiraClient.Issue.DoTransition(jiraIssue.Key, transitionTodo); err != nil {
 					log.Printf("ERROR: Unable to transition issue %s to To Do: %v", jiraIssue.Key, err)
