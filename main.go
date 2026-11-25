@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"regexp"
 	"strconv"
@@ -24,10 +25,11 @@ const (
 )
 
 var (
-	GITHUB_TOKEN = os.Getenv("GITHUB_TOKEN")
-	JIRA_EMAIL   = os.Getenv("JIRA_EMAIL")
-	JIRA_TOKEN   = os.Getenv("JIRA_TOKEN")
-	PEOPLE       = os.Getenv("PEOPLE")
+	GITHUB_TOKEN  = os.Getenv("GITHUB_TOKEN")
+	JIRA_EMAIL    = os.Getenv("JIRA_EMAIL")
+	JIRA_TOKEN    = os.Getenv("JIRA_TOKEN")
+	JIRA_CLOUD_ID = os.Getenv("JIRA_CLOUD_ID")
+	PEOPLE        = os.Getenv("PEOPLE")
 
 	ghIssueNumberRegex = regexp.MustCompile(`GH-orc-(\d+): `)
 	linkHeaderRegex    = regexp.MustCompile(`<(\S+)>; rel="next"`)
@@ -181,6 +183,13 @@ func createJiraIssue(jiraClient *jira.Client, issue GithubIssue) (*jira.Issue, e
 	return jiraIssue, nil
 }
 
+func jiraBaseURL() string {
+	if JIRA_CLOUD_ID != "" {
+		return "https://api.atlassian.com/ex/jira/" + url.PathEscape(JIRA_CLOUD_ID) + "/"
+	}
+	return query.JiraBaseURL
+}
+
 type knownIssue struct {
 	Key    string
 	Status *jira.Status
@@ -194,7 +203,7 @@ func main() {
 		log.Fatalf("error fetching team information: %v", err)
 	}
 
-	jiraClient, err := jiraclient.NewWithToken(query.JiraBaseURL, JIRA_EMAIL, JIRA_TOKEN)
+	jiraClient, err := jiraclient.NewWithToken(jiraBaseURL(), JIRA_EMAIL, JIRA_TOKEN)
 	if err != nil {
 		log.Fatalf("error building a Jira client: %v", err)
 	}
